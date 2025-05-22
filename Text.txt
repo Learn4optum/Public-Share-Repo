@@ -1,0 +1,65 @@
+name: CI-CD Pipeline
+
+on:
+  push:
+    branches: [ main, hotfix-* ]
+  pull_request:
+
+env:
+  JAVA_VERSION: '21'
+  GRADLE_VERSION: '8.12.1'
+  HELM_VERSION: '3.14.2'
+  KUBECTL_VERSION: '1.29.2'
+
+jobs:
+  checkout:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.get_tag.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Read pipeline data
+        id: read_yaml
+        run: |
+          echo "## Simulate reading helm/values.yaml"
+          # For actual use, parse and export needed values
+
+      - name: Set Git Tag
+        id: get_tag
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "tag=${{ github.run_number }}.${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+  build_sonar:
+    needs: checkout
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Build with Gradle
+        run: ./gradlew build
+
+      - name: SonarQube Scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: ./gradlew sonarqube \
+            -Dsonar.projectKey=my_project \
+            -Dsonar.organization=my_org \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.login=$SONAR_TOKEN
+
+  fortify_scan:
+    needs: build_sonar
+    if: ${{ github.event.inputs.run_fortify == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Fortify Scan
+        run: echo "Run Fortify tool (not natively supported in GitHub Actions, requires external integration)"
