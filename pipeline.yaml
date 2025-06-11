@@ -1,0 +1,179 @@
+name: CI-CD Full Pipeline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  ACR_NAME: youracr.azurecr.io
+  IMAGE_NAME: mrcp-intake
+  CHART_PATH: helm/mes-dev-azure
+  VALUE_FILE: helm/values.yaml
+  JAVA_VERSION: '21'
+  HELM_VERSION: '3.14.2'
+
+jobs:
+
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.get_tag.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+
+      - name: Gradle Build
+        run: ./gradlew build
+
+      - name: Generate Image Tag
+        id: get_tag
+        run: echo "image_tag=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to ACR
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ env.ACR_NAME }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Docker Build and Push
+        run: |
+          docker build -t ${{ env.ACR_NAME }}/${{ env.IMAGE_NAME }}:${{ steps.get_tag.outputs.image_tag }} .
+          docker push ${{ env.ACR_NAME }}/${{ env.IMAGE_NAME }}:${{ steps.get_tag.outputs.image_tag }}
+
+  deploy-nonprod:
+    name: Deploy to NonProd
+    needs: build
+    runs-on: ubuntu-latest
+    environment: nonprod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: AKS Auth - NonProd
+        uses: azure/aks-set-context@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NONPROD }}
+          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
+
+      - name: Helm Deploy
+        run: |
+          helm upgrade --install ${{ env.IMAGE_NAME }} ${{ env.CHART_PATH }} \
+            --values ${{ env.VALUE_FILE }} \
+            --set image.tag=${{ needs.build.outputs.image_tag }}
+
+  deploy-test:
+    name: Deploy to Test
+    needs: deploy-nonprod
+    runs-on: ubuntu-latest
+    environment: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: AKS Auth - Test
+        uses: azure/aks-set-context@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_TEST }}
+          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
+
+      - name: Helm Deploy
+        run: |
+          helm upgrade --install ${{ env.IMAGE_NAME }} ${{ env.CHART_PATH }} \
+            --values ${{ env.VALUE_FILE }} \
+            --set image.tag=${{ needs.build.outputs.image_tag }}
+
+  deploy-uat:
+    name: Deploy to UAT
+    needs: deploy-test
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: AKS Auth - UAT
+        uses: azure/aks-set-context@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_UAT }}
+          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
+
+      - name: Helm Deploy
+        run: |
+          helm upgrade --install ${{ env.IMAGE_NAME }} ${{ env.CHART_PATH }} \
+            --values ${{ env.VALUE_FILE }} \
+            --set image.tag=${{ needs.build.outputs.image_tag }}
+
+  deploy-stage:
+    name: Deploy to Stage
+    needs: deploy-uat
+    runs-on: ubuntu-latest
+    environment: stage
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: AKS Auth - Stage
+        uses: azure/aks-set-context@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_STAGE }}
+          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
+
+      - name: Helm Deploy
+        run: |
+          helm upgrade --install ${{ env.IMAGE_NAME }} ${{ env.CHART_PATH }} \
+            --values ${{ env.VALUE_FILE }} \
+            --set image.tag=${{ needs.build.outputs.image_tag }}
+
+  deploy-prod:
+    name: Deploy to Prod
+    needs: deploy-stage
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: AKS Auth - Prod
+        uses: azure/aks-set-context@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_PROD }}
+          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
+
+      - name: Helm Deploy
+        run: |
+          helm upgrade --install ${{ env.IMAGE_NAME }} ${{ env.CHART_PATH }} \
+            --values ${{ env.VALUE_FILE }} \
+            --set image.tag=${{ needs.build.outputs.image_tag }}
