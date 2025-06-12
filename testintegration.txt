@@ -1,0 +1,68 @@
+name: Integration Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feature/*
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    env:
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+      BUILD_NUMBER: ${{ github.run_number }}
+      GIT_COMMIT_SHORT: ${{ github.sha }}
+      EPHEMERAL_NAME: ephemeral-${{ github.run_id }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS Credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: Deploy Ephemeral Environment via Helm
+        run: |
+          helm upgrade --install ${{ env.EPHEMERAL_NAME }} ./helm/your-chart-path \
+            --namespace ${{ secrets.AKS_NONPROD_NAMESPACE }} \
+            --create-namespace \
+            --set image.tag=${{ github.sha }} \
+            --set k8s.envName=feature-test \
+            --set ingress.enabled=true \
+            --set ingress.hosts[0].paths[0]=/${{ env.BRANCH_NAME }}/${{ env.BUILD_NUMBER }}/${{ env.GIT_COMMIT_SHORT }}/\\(.*\\)
+
+      - name: Wait for Pod Startup
+        run: sleep 25
+
+      - name: Run Integration Tests
+        run: |
+          ./gradlew testIntegration \
+            -DbaseURI=http://your.ingress.host/${{ env.BRANCH_NAME }}/${{ env.BUILD_NUMBER }}/${{ env.GIT_COMMIT_SHORT }} \
+            -Dport=80
+
+      - name: Archive Integration Test Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-report
+          path: build/reports/tests/testIntegration
