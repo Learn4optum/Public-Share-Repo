@@ -21,3 +21,8 @@ helm push mes-dev-azure-0.1.0.tgz oci://<your-acr-name>.azurecr.io/helm
   run: helm push mes-dev-azure-0.1.0.tgz oci://<your-acr-name>.azurecr.io/helm
 
 ################
+az ad sp create-for-rbac \
+  --name my-acr-pusher \
+  --scopes $(az acr show --name <acr-name> --query id --output tsv) \
+  --role acrpush \
+  --sdk-auth
