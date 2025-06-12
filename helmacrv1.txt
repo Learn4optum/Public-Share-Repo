@@ -1,0 +1,45 @@
+jobs:
+  deploy-ephemeral:
+    runs-on: ubuntu-latest
+    env:
+      HELM_EXPERIMENTAL_OCI: 1
+      EPHEMERAL_NAME: my-feature-env
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+      BUILD_NUMBER: ${{ github.run_number }}
+      GIT_COMMIT_SHORT: ${{ github.sha }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Package Helm Chart
+        run: helm package ./helm/mes-dev-azure
+
+      - name: Get ACR Token and Login to Helm Registry
+        run: |
+          ACR_TOKEN=$(az acr login --name ${{ secrets.ACR_NAME }} --expose-token --output tsv --query accessToken)
+          helm registry login ${{ secrets.ACR_NAME }}.azurecr.io \
+            --username 00000000-0000-0000-0000-000000000000 \
+            --password $ACR_TOKEN
+
+      - name: Push Helm Chart to ACR
+        run: |
+          helm push mes-dev-azure-0.1.0.tgz oci://${{ secrets.ACR_NAME }}.azurecr.io/helm
+
+      - name: Deploy to AKS using az aks command invoke
+        run: |
+          az aks command invoke \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.AKS_CLUSTER_NAME }} \
+            --command "helm upgrade --install ${{ env.EPHEMERAL_NAME }} oci://${{ secrets.ACR_NAME }}.azurecr.io/helm/mes-dev-azure \
+              --namespace ${{ secrets.AKS_NONPROD_NAMESPACE }} \
+              --create-namespace \
+              --set image.tag=${{ github.sha }} \
+              --set k8s.envName=feature-test \
+              --set ingress.enabled=true \
+              --set ingress.hosts[0].paths[0]=/${{ env.BRANCH_NAME }}/${{ env.BUILD_NUMBER }}/${{ env.GIT_COMMIT_SHORT }}/\\(.*\\)" \
+            --file /dev/null"  # required dummy input file
