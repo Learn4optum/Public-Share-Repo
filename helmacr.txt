@@ -1,0 +1,23 @@
+az acr login --name <your-acr-name>
+
+  ##############
+  helm registry login <your-acr-name>.azurecr.io \
+  --username 00000000-0000-0000-0000-000000000000 \
+  --password $(az acr login --name <your-acr-name> --expose-token --output tsv --query accessToken)
+
+helm push mes-dev-azure-0.1.0.tgz oci://<your-acr-name>.azurecr.io/helm
+
+
+
+#################
+- name: Get ACR Access Token and Login Helm
+  run: |
+    ACR_TOKEN=$(az acr login --name <your-acr-name> --expose-token --output tsv --query accessToken)
+    helm registry login <your-acr-name>.azurecr.io \
+      --username 00000000-0000-0000-0000-000000000000 \
+      --password $ACR_TOKEN
+
+- name: Push Helm Chart
+  run: helm push mes-dev-azure-0.1.0.tgz oci://<your-acr-name>.azurecr.io/helm
+
+################
