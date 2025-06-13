@@ -1,0 +1,23 @@
+controller:
+  image:
+    repository: <your_acr_name>.azurecr.io/nginx-ingress-controller
+    tag: latest
+    pullPolicy: Always
+
+  replicaCount: 2
+
+  service:
+    type: NodePort
+    nodePorts:
+      http: 30080
+      https: 30443
+
+  ingressClassResource:
+    name: nginx
+    enabled: true
+
+  ssl:
+    enabled: true
+    secretName: nginx-ssl-secret
+
+resources: {}
