@@ -20,4 +20,12 @@ controller:
     enabled: true
     secretName: nginx-ssl-secret
 
+  
+  serviceAccount:
+    create: true
+    name: nginx-ingress
+
+rbac:
+  create: true
+
 resources: {}
