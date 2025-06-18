@@ -1,0 +1,70 @@
+TF approval 
+
+
+name: Terraform Multi-Env CI/CD with Approval
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: nonprod
+        type: choice
+        options:
+          - nonprod
+          - test
+          - uat
+          - stage
+          - prod
+
+jobs:
+  plan:
+    name: Terraform Plan (${{ github.event.inputs.environment }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init -backend-config="env=${{ github.event.inputs.environment }}"
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan-${{ github.event.inputs.environment }}
+
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.event.inputs.environment }}
+          path: tfplan-${{ github.event.inputs.environment }}
+
+  apply:
+    name: Terraform Apply (${{ github.event.inputs.environment }})
+    needs: plan
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment }}
+      url: https://portal.azure.com
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Download Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ github.event.inputs.environment }}
+          path: .
+
+      - name: Terraform Init
+        run: terraform init -backend-config="env=${{ github.event.inputs.environment }}"
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan-${{ github.event.inputs.environment }}
