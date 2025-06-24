@@ -1,0 +1,112 @@
+provider "azurerm" {
+  features {}
+}
+
+provider "azuread" {}
+
+# Data sources for existing VNet and Subnets
+data "azurerm_virtual_network" "vnet" {
+  name                = "my-vnet"
+  resource_group_name = "my-rg"
+}
+
+data "azurerm_subnet" "appgw_subnet" {
+  name                 = "appgw-subnet"
+  virtual_network_name = data.azurerm_virtual_network.vnet.name
+  resource_group_name  = "my-rg"
+}
+
+data "azurerm_subnet" "aks_subnet" {
+  name                 = "aks-subnet"
+  virtual_network_name = data.azurerm_virtual_network.vnet.name
+  resource_group_name  = "my-rg"
+}
+
+# Dummy Public IP (needed even if App Gateway uses private IP)
+resource "azurerm_public_ip" "dummy" {
+  name                = "appgw-public-ip"
+  location            = data.azurerm_virtual_network.vnet.location
+  resource_group_name = "my-rg"
+  allocation_method   = "Static"
+  sku                 = "Standard"
+}
+
+# Application Gateway with private IP
+resource "azurerm_application_gateway" "appgw" {
+  name                = "my-appgw"
+  location            = data.azurerm_virtual_network.vnet.location
+  resource_group_name = "my-rg"
+  sku {
+    name     = "Standard_v2"
+    tier     = "Standard_v2"
+    capacity = 2
+  }
+
+  gateway_ip_configuration {
+    name      = "appgw-ip-config"
+    subnet_id = data.azurerm_subnet.appgw_subnet.id
+  }
+
+  frontend_port {
+    name = "http"
+    port = 80
+  }
+
+  frontend_ip_configuration {
+    name                 = "frontend-public-ip"
+    public_ip_address_id = azurerm_public_ip.dummy.id
+  }
+
+  frontend_ip_configuration {
+    name                          = "frontend-private-ip"
+    private_ip_address_allocation = "Static"
+    private_ip_address            = "10.0.1.10" # <-- Replace with desired static IP in your appgw subnet
+    subnet_id                     = data.azurerm_subnet.appgw_subnet.id
+  }
+
+  backend_address_pool {
+    name = "default-backend-pool"
+  }
+
+  backend_http_settings {
+    name                  = "default-http-settings"
+    cookie_based_affinity = "Disabled"
+    port                  = 80
+    protocol              = "Http"
+    request_timeout       = 30
+  }
+
+  http_listener {
+    name                           = "http-listener-private"
+    frontend_ip_configuration_name = "frontend-private-ip"
+    frontend_port_name             = "http"
+    protocol                       = "Http"
+  }
+
+  http_listener {
+    name                           = "http-listener-public"
+    frontend_ip_configuration_name = "frontend-public-ip"
+    frontend_port_name             = "http"
+    protocol                       = "Http"
+  }
+
+  request_routing_rule {
+    name                       = "http-rule-private"
+    rule_type                  = "Basic"
+    http_listener_name         = "http-listener-private"
+    backend_address_pool_name  = "default-backend-pool"
+    backend_http_settings_name = "default-http-settings"
+  }
+
+  request_routing_rule {
+    name                       = "http-rule-public"
+    rule_type                  = "Basic"
+    http_listener_name         = "http-listener-public"
+    backend_address_pool_name  = "default-backend-pool"
+    backend_http_settings_name = "default-http-settings"
+  }
+
+  tags = {
+    environment = "demo"
+  }
+}
