@@ -1,0 +1,14 @@
+  ingress_application_gateway {
+    enabled    = true
+    gateway_id = azurerm_application_gateway.appgw.id
+  }
+
+
+
+
+# Role assignment for AGIC identity to access App Gateway
+resource "azurerm_role_assignment" "agic_appgw_contributor" {
+  scope                = azurerm_application_gateway.appgw.id
+  role_definition_name = "Contributor"
+  principal_id         = azurerm_kubernetes_cluster.aks.identity[0].principal_id
+}
