@@ -1,0 +1,100 @@
+az keyvault secret set --vault-name <YourKeyVaultName> \
+  --name mysecret --value "super-secret-value"
+🔹 Step 2: Get AKS Managed Identity (Node Pool Identity)
+Find the identity used by your AKS cluster nodes:
+
+bash
+Copy
+Edit
+az aks show --name <AKS_NAME> --resource-group <RESOURCE_GROUP> \
+  --query identityProfile.kubeletidentity.objectId -o tsv
+🔹 Step 3: Grant Key Vault Access to AKS
+Assign Key Vault Secrets User role to that identity:
+
+bash
+Copy
+Edit
+az role assignment create --assignee <KUBELET_OBJECT_ID> \
+  --role "Key Vault Secrets User" \
+  --scope /subscriptions/<SUB_ID>/resourceGroups/<RESOURCE_GROUP>/providers/Microsoft.KeyVault/vaults/<KeyVaultName>
+🔹 Step 4: Create SecretProviderClass in AKS
+This maps Key Vault secrets into volumes and/or Kubernetes Secrets.
+
+yaml
+Copy
+Edit
+# secret-provider.yaml
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: my-keyvault-secrets
+  namespace: default
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"
+    useVMManagedIdentity: "true"  # You are using AKS MI
+    keyvaultName: "<YourKeyVaultName>"
+    objects: |
+      array:
+        - |
+          objectName: mysecret
+          objectType: secret
+    tenantId: "<YourTenantID>"
+  secretObjects:
+    - secretName: kv-secret
+      type: Opaque
+      data:
+        - objectName: mysecret
+          key: mysecret
+Replace <YourKeyVaultName> and <YourTenantID>.
+
+Apply it:
+
+bash
+Copy
+Edit
+kubectl apply -f secret-provider.yaml
+🔹 Step 5: Create a Pod or Deployment That Mounts the Secret
+yaml
+Copy
+Edit
+# pod-with-secret.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: demo-app
+spec:
+  containers:
+    - name: busybox
+      image: busybox
+      command: ["sh", "-c", "while true; do cat /mnt/secrets-store/mysecret; sleep 10; done"]
+      volumeMounts:
+        - name: secrets-store
+          mountPath: "/mnt/secrets-store"
+          readOnly: true
+  volumes:
+    - name: secrets-store
+      csi:
+        driver: secrets-store.csi.k8s.io
+        readOnly: true
+        volumeAttributes:
+          secretProviderClass: "my-keyvault-secrets"
+Apply it:
+
+bash
+Copy
+Edit
+kubectl apply -f pod-with-secret.yaml
+🔹 (Optional) Step 6: Use as Environment Variable
+If you want to use it as a Kubernetes native secret:
+
+yaml
+Copy
+Edit
+env:
+  - name: MY_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: kv-secret
+        key: mysecret
