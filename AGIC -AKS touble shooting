@@ -1,0 +1,1 @@
+az network private-dns zone list --query "[?contains(name, 'azmk8s.io')].name"
