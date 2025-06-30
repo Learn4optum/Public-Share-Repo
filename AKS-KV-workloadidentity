@@ -14,3 +14,7 @@ bash
 Copy
 Edit
 az identity show -g <resource-group> -n <uami-name> --query clientId -o tsv
+
+
+kubectl create serviceaccount java-app-sa --namespace default --dry-run=client -o yaml |  kubectl annotate -f - azure.workload.identity/client-id=<UAMI_CLIENT_ID> --overwrite | kubectl apply -f -
+
