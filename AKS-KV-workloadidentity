@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: java-app-sa
+  namespace: default  # change if needed
+  annotations:
+    azure.workload.identity/client-id: <UAMI_CLIENT_ID>
+
+
+Option 2: Get UAMI Client ID via Azure CLI
+If you only know the identity name:
+
+bash
+Copy
+Edit
+az identity show -g <resource-group> -n <uami-name> --query clientId -o tsv
