@@ -1,0 +1,93 @@
+provider "azurerm" {
+  features {}
+}
+
+provider "azuread" {}
+
+# VNet and Subnet references
+data "azurerm_virtual_network" "vnet" {
+  name                = "my-vnet"
+  resource_group_name = "my-rg"
+}
+
+data "azurerm_subnet" "appgw_subnet" {
+  name                 = "appgw-subnet"
+  virtual_network_name = data.azurerm_virtual_network.vnet.name
+  resource_group_name  = "my-rg"
+}
+
+data "azurerm_subnet" "aks_subnet" {
+  name                 = "aks-subnet"
+  virtual_network_name = data.azurerm_virtual_network.vnet.name
+  resource_group_name  = "my-rg"
+}
+
+resource "azurerm_application_gateway" "appgw" {
+  name                = "my-appgw"
+  location            = data.azurerm_virtual_network.vnet.location
+  resource_group_name = "my-rg"
+
+  sku {
+    name     = "WAF_v2"
+    tier     = "WAF_v2"
+    capacity = 2
+  }
+
+  waf_configuration {
+    enabled                  = true
+    firewall_mode            = "Prevention" # Or "Detection"
+    rule_set_type            = "OWASP"
+    rule_set_version         = "3.2"
+    request_body_check       = true
+    file_upload_limit_mb     = 100
+    max_request_body_size_kb = 128
+  }
+
+  gateway_ip_configuration {
+    name      = "appgw-ip-config"
+    subnet_id = data.azurerm_subnet.appgw_subnet.id
+  }
+
+  frontend_port {
+    name = "http"
+    port = 80
+  }
+
+  frontend_ip_configuration {
+    name                          = "frontend-private-ip"
+    private_ip_address_allocation = "Static"
+    private_ip_address            = "10.0.1.10" # Replace with appropriate IP
+    subnet_id                     = data.azurerm_subnet.appgw_subnet.id
+  }
+
+  backend_address_pool {
+    name = "default-backend-pool"
+  }
+
+  backend_http_settings {
+    name                  = "default-http-settings"
+    cookie_based_affinity = "Disabled"
+    port                  = 80
+    protocol              = "Http"
+    request_timeout       = 30
+  }
+
+  http_listener {
+    name                           = "http-listener-private"
+    frontend_ip_configuration_name = "frontend-private-ip"
+    frontend_port_name             = "http"
+    protocol                       = "Http"
+  }
+
+  request_routing_rule {
+    name                       = "http-rule-private"
+    rule_type                  = "Basic"
+    http_listener_name         = "http-listener-private"
+    backend_address_pool_name  = "default-backend-pool"
+    backend_http_settings_name = "default-http-settings"
+  }
+
+  tags = {
+    environment = "demo"
+  }
+}
