@@ -1,0 +1,23 @@
+provider "azurerm" {
+  features {}
+}
+
+# Example Key Vault data reference (replace with your actual values)
+data "azurerm_key_vault" "example" {
+  name                = "your-keyvault-name"
+  resource_group_name = "your-rg-name"
+}
+
+# Upload the cert.pem as a secret
+resource "azurerm_key_vault_secret" "cert_pem" {
+  name         = "my-cert-pem"
+  value        = file("${path.module}/cert.pem")
+  key_vault_id = data.azurerm_key_vault.example.id
+}
+
+# Upload the private.key as a secret
+resource "azurerm_key_vault_secret" "private_key" {
+  name         = "my-private-key"
+  value        = file("${path.module}/private.key")
+  key_vault_id = data.azurerm_key_vault.example.id
+}
