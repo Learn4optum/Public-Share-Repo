@@ -1,0 +1,25 @@
+name: App1 CI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  get-secrets:
+    uses: org/central-pipeline/.github/workflows/fetch-secrets.yml@main
+    secrets:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      KEYVAULT_NAME: ${{ secrets.KEYVAULT_NAME }}
+
+  run-build:
+    needs: get-secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run sonar scan with secret
+        run: |
+          echo "Running sonar scan with token: ${{ needs.get-secrets.outputs.SONAR_TOKEN }}"
+          echo "Twistlock password: ${{ needs.get-secrets.outputs.TWISTLOCK_PASSWORD }}"
